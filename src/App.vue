@@ -1,13 +1,23 @@
 <script setup>
+    import Loader from './components/Loader.vue';
+    import Button from './components/Button.vue';
+
     import Konva from 'konva';
+    import heic2any from 'heic2any';
 
     import { buildDetector } from './model.ts';
 
     import * as faceapi from 'face-api.js';
 
     import { useImage } from 'vue-konva';
-    import { computed, ref, watch, nextTick, onMounted, onUnmounted, shallowRef } from 'vue';
+    import { computed, ref, watch, nextTick, onMounted, onUpdated, onUnmounted, shallowRef } from 'vue';
 
+    const isLoading = ref(true);
+    const loadingText = ref(null);
+
+    const imageMimeType = ref(null);
+
+    const isDisabledFacesDetection = ref(false);
     const imageNode = ref(null);
     const facesImageNode = ref(null);
     const image = ref(null);
@@ -23,30 +33,32 @@
     });
 
     const cropConfig = ref(null);
-    const sceneWidth = 3024;
-    const sceneHeight = 4032;
 
     const containerRef = ref(null);
     const stageRef = ref(null);
 
     const scale = ref(1);
-    const stageWidth = computed(() => sceneWidth * scale.value);
-    const stageHeight = computed(() => sceneHeight * scale.value);
+    const stageWidth = ref(400);  // TODO: Default value + resize event not working
+    const stageHeight = ref(600);
 
-    const imageWidth = ref(3024);
-    const imageHeight = ref(4032);
-    const imageScalingFactor = ref(1);
+    const imageWidth = ref(null);
+    const imageHeight = ref(null);
 
     const detector = shallowRef(null);
 
     const updateSize = () => {
-      if (!containerRef.value) return;
+      if (!containerRef.value) {
+        return;
+      }
       
       // Get container width
       const containerWidth = containerRef.value.offsetWidth;
+      const containerHeight = containerRef.value.offsetHeight;
+      stageWidth.value = containerWidth;
+      stageHeight.value = containerHeight;
       
       // Calculate scale
-      scale.value = containerWidth / sceneWidth;
+      scale.value = 1;
     };
 
     // Add event listeners
@@ -54,6 +66,11 @@
       updateSize();
       window.addEventListener('resize', updateSize);
       detector.value = await buildDetector();
+      isLoading.value = false;
+    });
+
+    onUpdated(async () => {
+      //updateSize();
     });
 
     // Clean up
@@ -76,7 +93,7 @@
     });
 
     const activeFacesFilters = computed(() => {
-        const active = activeAllImageFilters.value;
+        const active = [...activeAllImageFilters.value];
         if (facesFilters.value.blur.active) {
             active.push(Konva.Filters.Blur);
         }
@@ -90,63 +107,100 @@
     });
 
     async function detectFaces() {
-        const faces = await faceapi.detectAllFaces(image.value)
-        let x = faces[0]._box._x * imageScalingFactor.value;
-        let y = faces[0]._box._y * imageScalingFactor.value;
-        let width = faces[0]._box._width * imageScalingFactor.value;
-        let height = faces[0]._box._height * imageScalingFactor.value;
+        if (cropConfig.value) {
+            facesFilters.value.pixelate.active = !facesFilters.value.pixelate.active;
+            return;
+        }
+        isDisabledFacesDetection.value = true;
 
-        // Set crop configuration
-        cropConfig.value = {
-          displayX: x,
-          displayY: y,
-          displayWidth: width,
-          displayHeight: height,
-          x: faces[0]._box._x,
-          y: faces[0]._box._y,
-          width: faces[0]._box._width,
-          height: faces[0]._box._height,
+        const faces = await faceapi.detectAllFaces(image.value)
+
+        if (faces.length > 0) {
+            // TODO: Support multiple faces
+            let x = faces[0]._box._x;
+            let y = faces[0]._box._y;
+            let width = faces[0]._box._width;
+            let height = faces[0]._box._height;
+
+            // Set crop configuration
+            cropConfig.value = {
+              displayX: x,
+              displayY: y,
+              displayWidth: width,
+              displayHeight: height,
+              x: faces[0]._box._x,
+              y: faces[0]._box._y,
+              width: faces[0]._box._width,
+              height: faces[0]._box._height,
+            }
+
+            await nextTick();
+            facesImageNode.value.getNode().cache();
+
+            // Enable filter on faces
+            facesFilters.value.pixelate.active = true;
+            facesFilters.value.pixelate.pixelSize = Math.max(width / 10, height / 10);
         }
 
-        await nextTick();
-        facesImageNode.value.getNode().cache();
-
-        // Enable filter on faces
-        facesFilters.value.pixelate.active = true;
-        facesFilters.value.pixelate.pixelSize = Math.max(width / 10, height / 10);
+        isDisabledFacesDetection.value = false;
     }
         
-    function handleFileSelect(e) {
+    async function handleFileSelect(e) {
       const input = e.target;  
       const filesAsArray = Array.from(input?.files || []);
       for (const file of filesAsArray) {
+          let maybeConvertedBlob = file;
+          imageMimeType.value = file.type;
+
+          if (file.type == 'image/heif') {
+              isLoading.value = true;
+              loadingText.value = 'Converting HEIC image to a browser-supported format…'
+              maybeConvertedBlob = await heic2any({
+                  blob: file,
+                  toType: 'image/jpeg',
+                  quality: 0.9
+              })
+              imageMimeType.value = 'image/jpeg';
+          }
+
           const reader = new FileReader();
           reader.onload = function (ev) {
               let newImage = new Image();
               newImage.onload = () => {
                  image.value = newImage;
+                  isLoading.value = false;
               };
               newImage.src = ev.target.result;
           }
-          reader.readAsDataURL(file);
+          reader.readAsDataURL(maybeConvertedBlob);
       }
     }
 
     watch(image, async (newImage) => {
-      if (newImage) {
-        const imageAspectRatio = newImage.width / newImage.height;
-        if (newImage.height > newImage.width) {
-            imageHeight.value = sceneHeight;
-            imageWidth.value = sceneHeight * imageAspectRatio;
-            imageScalingFactor.value = sceneHeight / newImage.height;
-        } else {
-            imageWidth.value = sceneWidth;
-            imageHeight.value = sceneWidth / imageAspectRatio;
-            imageScalingFactor.value = sceneWidth / newImage.width;
-        }
-        await nextTick();
-        imageNode.value.getNode().cache();
+      if (!newImage) {
+        return;
       }
+
+      if (stageWidth.value > newImage.width) {
+          stageWidth.value = newImage.width;
+          stageHeight.value = newImage.height;
+
+          imageHeight.value = newImage.height;
+          imageWidth.value = newImage.width;
+
+          scale.value = 1;
+      } else {
+          // Unaltered stageWidth.value
+          stageHeight.value = newImage.height / newImage.width * stageWidth.value;
+
+          imageHeight.value = newImage.height;
+          imageWidth.value = newImage.width;
+
+          scale.value = stageWidth.value / newImage.width;
+      }
+
+      await nextTick();
+      imageNode.value.getNode().cache();
     });
 
     function reset() {
@@ -166,10 +220,9 @@
     }
 
     function handleExport() {
-      // TODO: Preserve original image size
-      // TODO: Preserve file format
       const dataURL = stageRef.value.getNode().toDataURL({
-        pixelRatio: imageScalingFactor.value,
+          pixelRatio: 1 / scale.value,
+          mimeType: imageMimeType.value,
       });
       
       const link = document.createElement('a');
@@ -185,12 +238,13 @@
     <div class="bg-white w-full max-w-5xl mx-auto p-8 rounded shadow-md">
         <h1 class="text-3xl font-bold text-center mb-8">Quick edit</h1>
 
-        <div class="grid grid-cols-2 gap-8">
+        <Loader v-if="isLoading" :text="loadingText" />
+        <div class="grid grid-cols-2 gap-8" v-else>
             <!-- Image Preview -->
-            <div class="col-span-2 md:col-span-1 items-center justify-center border border-dashed border-gray-300 rounded-md h-80 bg-gray-50" :style="{height: (imageHeight * scale) + 'px'}">
-                <div ref="containerRef" style="width: 100%; height: 100%;">
-                    <span class="text-gray-400" v-if="!image">No image uploaded</span>
-                    <v-stage ref="stageRef" :config="{width: stageWidth, height: stageHeight, scaleX: scale, scaleY: scale}">
+            <div :class="'col-span-2 md:col-span-1 items-center justify-center' + (image === null ? ' border border-dashed border-gray-300 rounded-md h-80 bg-gray-50' : '')" :style="{height: stageHeight + 'px'}">
+                <div ref="containerRef" class="w-full h-full">
+                    <span class="text-gray-400 block text-center" v-if="!image">No image uploaded</span>
+                    <v-stage v-if="image" ref="stageRef" :config="{width: stageWidth, height: stageHeight, scaleX: scale, scaleY: scale}">
                         <v-layer>
                             <!-- Full image (no filter) -->
                             <v-image
@@ -227,7 +281,7 @@
             </div>
 
             <!-- Controls -->
-            <div class="col-span-2 md:col-span-1 space-y-6">
+            <div id="controls" class="col-span-2 md:col-span-1 space-y-6">
                 <!-- Buttons -->
                 <form class="px-8 pt-6 pb-8 mb-4" v-if="!image">
                     <div class="mb-4">
@@ -238,11 +292,12 @@
                 <div class="space-y-6" v-else>
                     <div>
                         <h2>Blur:</h2>
-                        <button @click="detectFaces" class="cursor-pointer bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">Blur faces</button>
+                        <!-- TODO: Loading spinner + disabled status -->
+                        <Button :action="detectFaces" :active="facesFilters.pixelate.active" label="Blur face"/>
 
                         <h2>Effects:</h2>
                         <!-- TODO: Image mode: B&W / colors -->
-                        <button @click="imageFilters.invert.active = !imageFilters.invert.active" class="cursor-pointer bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">Negative</button>
+                        <Button :action="() => {imageFilters.invert.active = !imageFilters.invert.active}" :active="imageFilters.invert.active" label="Negative" />
                     </div>
 
                     <div class="grid grid-cols-2" v-if="image">
@@ -255,3 +310,9 @@
         </div>
     </div>
 </template>
+
+<style scoped>
+#controls {
+    z-index: 9999;
+}
+</style>
