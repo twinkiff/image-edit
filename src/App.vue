@@ -10,7 +10,7 @@
     import * as faceapi from 'face-api.js';
 
     import { useImage } from 'vue-konva';
-    import { computed, ref, watch, nextTick, onMounted, onUpdated, onUnmounted, shallowRef } from 'vue';
+    import { computed, ref, useTemplateRef, watch, nextTick, onMounted, onUpdated, onUnmounted, shallowRef } from 'vue';
 
     const isLoading = ref(true);
     const loadingText = ref(null);
@@ -19,7 +19,7 @@
 
     const isDisabledFacesDetection = ref(false);
     const imageNode = ref(null);
-    const facesImageNode = ref(null);
+    const facesImageNodeRefs = useTemplateRef('facesImageNode');
     const image = ref(null);
     const imageFilters = ref({
       blur: { active: false },
@@ -32,7 +32,7 @@
       pixelate: { active: false, pixelSize: 8 },
     });
 
-    const cropConfig = ref(null);
+    const cropConfigs = ref(null);
 
     const containerRef = ref(null);
     const stageRef = ref(null);
@@ -107,7 +107,7 @@
     });
 
     async function detectFaces() {
-        if (cropConfig.value) {
+        if (cropConfigs.value !== null) {
             facesFilters.value.pixelate.active = !facesFilters.value.pixelate.active;
             return;
         }
@@ -115,34 +115,58 @@
 
         const faces = await faceapi.detectAllFaces(image.value)
 
+        let maxWidth = 0;
+        let maxHeight = 0;
         if (faces.length > 0) {
-            // TODO: Support multiple faces
-            let x = faces[0]._box._x;
-            let y = faces[0]._box._y;
-            let width = faces[0]._box._width;
-            let height = faces[0]._box._height;
+            const newCropConfigs = []
 
-            // Set crop configuration
-            cropConfig.value = {
-              displayX: x,
-              displayY: y,
-              displayWidth: width,
-              displayHeight: height,
-              x: faces[0]._box._x,
-              y: faces[0]._box._y,
-              width: faces[0]._box._width,
-              height: faces[0]._box._height,
+            for (let face of faces) {
+                let x = face._box._x;
+                let y = face._box._y;
+                let width = face._box._width;
+                let height = face._box._height;
+
+                // Set crop configuration
+                newCropConfigs.push({
+                  // Even though it might seem redundant, everything is required in here.
+                  displayX: x,
+                  displayY: y,
+                  displayWidth: width,
+                  displayHeight: height,
+                  x: x,
+                  y: y,
+                  width: width,
+                  height: height,
+                })
+                
+                if (width > maxWidth) {
+                    maxWidth = width;
+                }
+                if (height > maxHeight) {
+                    maxHeight = height;
+                }
             }
 
+            cropConfigs.value = newCropConfigs;
             await nextTick();
-            facesImageNode.value.getNode().cache();
+            
+            for (let faceImageNodeRef of facesImageNodeRefs.value) {
+                faceImageNodeRef.getNode().cache();
+            }
 
             // Enable filter on faces
             facesFilters.value.pixelate.active = true;
-            facesFilters.value.pixelate.pixelSize = Math.max(width / 10, height / 10);
+            facesFilters.value.pixelate.pixelSize = Math.max(maxWidth / 10, maxHeight / 10);
         }
 
         isDisabledFacesDetection.value = false;
+    }
+
+    function setFacesImageNodeRef(el) {
+        console.log(el);
+        if (el) {
+            facesImageNodeRefs.value.push(el);
+        }
     }
         
     async function handleFileSelect(e) {
@@ -205,7 +229,7 @@
 
     function reset() {
         imageNode.value = null;
-        facesImageNode.value = null;
+        facesImageNodeRefs.value = [];
         image.value = null;
 
         imageFilters.value.blur.active = false;
@@ -216,7 +240,7 @@
         facesFilters.value.invert.active = false;
         facesFilters.value.pixelate.active = false;
 
-        cropConfig.value = null;
+        cropConfigs.value = null;
     }
 
     function handleExport() {
@@ -263,7 +287,7 @@
                         <v-layer>
                             <!-- Cropped faces from the image (filter) applied -->
                             <v-image
-                                v-if="cropConfig"
+                                v-for="cropConfig in cropConfigs"
                                 ref="facesImageNode"
                                 :x="cropConfig.displayX"
                                 :y="cropConfig.displayY"
@@ -293,7 +317,7 @@
                     <div>
                         <h2>Blur:</h2>
                         <!-- TODO: Loading spinner + disabled status -->
-                        <Button :action="detectFaces" :active="facesFilters.pixelate.active" label="Blur face"/>
+                        <Button :action="detectFaces" :active="facesFilters.pixelate.active" label="Blur faces"/>
 
                         <h2>Effects:</h2>
                         <!-- TODO: Image mode: B&W / colors -->
