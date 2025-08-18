@@ -21,6 +21,7 @@
     const imageMimeType = ref(null);
 
     const isDisabledFacesDetection = ref(false);
+    const fileName = ref('stage');
     const imageNode = ref(null);
     const facesImageNodeRefs = useTemplateRef('facesImageNode');
     const image = ref(null);
@@ -193,8 +194,9 @@
           reader.onload = function (ev) {
               let newImage = new Image();
               newImage.onload = () => {
+                 fileName.value = file.name;
                  image.value = newImage;
-                  isLoading.value = false;
+                 isLoading.value = false;
               };
               newImage.src = ev.target.result;
           }
@@ -236,18 +238,46 @@
         cropConfigs.value = null;
     }
 
-    function handleExport() {
-      const dataURL = stageRef.value.getNode().toDataURL({
-          pixelRatio: 1 / scale.value,
-          mimeType: imageMimeType.value,
-      });
-      
-      const link = document.createElement('a');
-      link.download = 'stage.png';
-      link.href = dataURL;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    async function handleExport() {
+      const splitFilename = fileName.value.split('.');
+      splitFilename.pop();  // Drop extension
+      const downloadFilename = `${splitFilename.join('.')}-edited`;
+
+      try {
+        const blob = await stageRef.value.getNode().toBlob({
+            pixelRatio: 1 / scale.value,
+            mimeType: imageMimeType.value,
+        });
+        console.log(blob);
+        const data = {
+          files: [
+            new File([blob], downloadFilename, {
+              type: imageMimeType.value,
+            }),
+          ],
+          title: "TODO",  // TODO
+          text: "TODO",  // TODO
+        };
+
+        if (!navigator.canShare || !navigator.canShare(data)) {
+          throw Error('Share APIs not supported in browser');
+        }
+        // TODO: Check this works
+        await navigator.share(data);
+      } catch (err) {
+        // TODO: Reuse blob from before and do not re-export
+        const dataURL = stageRef.value.getNode().toDataURL({
+            pixelRatio: 1 / scale.value,
+            mimeType: imageMimeType.value,
+        });
+
+        const link = document.createElement('a');
+        link.download = downloadFilename;
+        link.href = dataURL;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } 
     };
 </script>
 
