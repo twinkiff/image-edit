@@ -2,6 +2,7 @@
     import Loader from './components/Loader.vue';
     import Button from './components/Button.vue';
 
+    import mimeDb from 'mime-db';
     import Konva from 'konva';
     import heic2any from 'heic2any';
 
@@ -248,10 +249,10 @@
             pixelRatio: 1 / scale.value,
             mimeType: imageMimeType.value,
         });
-        console.log(blob);
+        console.log(`${downloadFilename}.${mimeDb[imageMimeType.value].extensions[0]}`);
         const data = {
           files: [
-            new File([blob], downloadFilename, {
+            new File([blob], `${downloadFilename}.${mimeDb[imageMimeType.value]}`, {
               type: imageMimeType.value,
             }),
           ],
@@ -262,10 +263,8 @@
         if (!navigator.canShare || !navigator.canShare(data)) {
           throw Error('Share APIs not supported in browser');
         }
-        // TODO: Check this works
         await navigator.share(data);
       } catch (err) {
-        // TODO: Reuse blob from before and do not re-export
         const dataURL = stageRef.value.getNode().toDataURL({
             pixelRatio: 1 / scale.value,
             mimeType: imageMimeType.value,
