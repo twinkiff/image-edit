@@ -5,6 +5,9 @@
     import Konva from 'konva';
     import heic2any from 'heic2any';
 
+    // See https://github.com/konvajs/konva/issues/412
+    Konva.pixelRatio = 2;
+
     import { buildDetector } from './model.ts';
 
     import * as faceapi from 'face-api.js';
@@ -47,18 +50,21 @@
     const detector = shallowRef(null);
 
     const updateSize = () => {
-      if (!containerRef.value) {
+      if (!containerRef.value) {  // TODO
         return;
       }
       
       // Get container width
       const containerWidth = containerRef.value.offsetWidth;
       const containerHeight = containerRef.value.offsetHeight;
-      stageWidth.value = containerWidth;
-      stageHeight.value = containerHeight;
-      
-      // Calculate scale
-      scale.value = 1;
+
+      let scalingFactor = containerWidth / stageWidth.value;
+      let newStageHeight = stageHeight.value * scalingFactor;
+      let newStageWidth = containerWidth;
+
+      scale.value *= scalingFactor;
+      stageWidth.value = newStageWidth;
+      stageHeight.value = newStageHeight;
     };
 
     // Add event listeners
@@ -67,10 +73,6 @@
       window.addEventListener('resize', updateSize);
       detector.value = await buildDetector();
       isLoading.value = false;
-    });
-
-    onUpdated(async () => {
-      //updateSize();
     });
 
     // Clean up
@@ -156,7 +158,7 @@
 
             // Enable filter on faces
             facesFilters.value.pixelate.active = true;
-            facesFilters.value.pixelate.pixelSize = Math.max(maxWidth / 10, maxHeight / 10);
+            facesFilters.value.pixelate.pixelSize = Math.max(maxWidth / 10, maxHeight / 10) * Konva.pixelRatio;
         }
 
         isDisabledFacesDetection.value = false;
@@ -204,24 +206,15 @@
       if (!newImage) {
         return;
       }
+      let scalingFactor = stageWidth.value / newImage.width;
 
-      if (stageWidth.value > newImage.width) {
-          stageWidth.value = newImage.width;
-          stageHeight.value = newImage.height;
+      stageWidth.value = newImage.width * scalingFactor;
+      stageHeight.value = newImage.height * scalingFactor;
 
-          imageHeight.value = newImage.height;
-          imageWidth.value = newImage.width;
+      imageHeight.value = newImage.height;
+      imageWidth.value = newImage.width;
 
-          scale.value = 1;
-      } else {
-          // Unaltered stageWidth.value
-          stageHeight.value = newImage.height / newImage.width * stageWidth.value;
-
-          imageHeight.value = newImage.height;
-          imageWidth.value = newImage.width;
-
-          scale.value = stageWidth.value / newImage.width;
-      }
+      scale.value = scalingFactor;
 
       await nextTick();
       imageNode.value.getNode().cache();
