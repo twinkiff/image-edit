@@ -6,15 +6,14 @@
     import Konva from 'konva';
     import heic2any from 'heic2any';
 
-    // See https://github.com/konvajs/konva/issues/412
-    Konva.pixelRatio = 2;
-
     import { buildDetector } from './model.ts';
 
     import * as faceapi from 'face-api.js';
 
     import { useImage } from 'vue-konva';
     import { computed, ref, useTemplateRef, watch, nextTick, onMounted, onUpdated, onUnmounted, shallowRef } from 'vue';
+
+    const defaultPixelRatio = Konva.pixelRatio;
 
     const isLoading = ref(true);
     const loadingText = ref(null);
@@ -167,7 +166,6 @@
     }
 
     function setFacesImageNodeRef(el) {
-        console.log(el);
         if (el) {
             facesImageNodeRefs.value.push(el);
         }
@@ -195,6 +193,16 @@
           reader.onload = function (ev) {
               let newImage = new Image();
               newImage.onload = () => {
+                 Konva.pixelRatio = defaultPixelRatio;
+                 while (newImage.width * newImage.height * Konva.pixelRatio * Konva.pixelRatio > 67108864) {
+                    console.log('Image is too large, reducing pixel ratio.');
+                    Konva.pixelRatio -= 1;
+
+                    if (Konva.pixelRatio <= 0) {
+                        throw Error('Image is too large to be loaded in browser');
+                    }
+                 }
+
                  fileName.value = file.name;
                  image.value = newImage;
                  isLoading.value = false;
