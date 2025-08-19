@@ -218,7 +218,6 @@
                         throw new Error('Image is too large to be loaded in browser');
                     }
                  }
-                 console.log(Konva.pixelRatio, defaultPixelRatio);
                  if (Konva.pixelRatio != defaultPixelRatio) {
                    infoBoxText.value = 'Image preview might appear blurry to preserve performances. Downloaded image will have the same quality as the input image.';
                  } else {
