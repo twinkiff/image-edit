@@ -5,6 +5,7 @@
     import mimeDb from 'mime-db';
     import Konva from 'konva';
     import heic2any from 'heic2any';
+    import canvasSize from 'canvas-size';
 
     import { buildDetector } from './model.ts';
 
@@ -17,8 +18,12 @@
 
     const isLoading = ref(true);
     const loadingText = ref(null);
+    
+    const infoBoxText = ref(null);
 
     const imageMimeType = ref(null);
+
+    const maxCanvasSize = ref(null);
 
     const isDisabledFacesDetection = ref(false);
     const fileName = ref('stage');
@@ -174,6 +179,17 @@
     async function handleFileSelect(e) {
       const input = e.target;  
       const filesAsArray = Array.from(input?.files || []);
+
+      if (maxCanvasSize.value === null) {
+        // TODO: Preload this
+        maxCanvasSize.value = await canvasSize.maxArea({
+          useWorker: true,
+          onError(results) {
+            throw new Error(`Unable to determine maximum canvas size: ${JSON.stringify(results)}.`);
+          },
+        });
+      }
+
       for (const file of filesAsArray) {
           let maybeConvertedBlob = file;
           imageMimeType.value = file.type;
@@ -194,13 +210,19 @@
               let newImage = new Image();
               newImage.onload = () => {
                  Konva.pixelRatio = defaultPixelRatio;
-                 while (newImage.width * newImage.height * Konva.pixelRatio * Konva.pixelRatio > 67108864) {
+                 while (newImage.width * newImage.height * Konva.pixelRatio * Konva.pixelRatio > maxCanvasSize.value.width * maxCanvasSize.value.height) {
                     console.log('Image is too large, reducing pixel ratio.');
                     Konva.pixelRatio -= 1;
 
                     if (Konva.pixelRatio <= 0) {
-                        throw Error('Image is too large to be loaded in browser');
+                        throw new Error('Image is too large to be loaded in browser');
                     }
+                 }
+                 console.log(Konva.pixelRatio, defaultPixelRatio);
+                 if (Konva.pixelRatio != defaultPixelRatio) {
+                   infoBoxText.value = 'Image preview might appear blurry to preserve performances. Downloaded image will have the same quality as the input image.';
+                 } else {
+                   infoBoxText.value = null;
                  }
 
                  fileName.value = file.name;
@@ -245,6 +267,9 @@
         facesFilters.value.pixelate.active = false;
 
         cropConfigs.value = null;
+
+        Konva.pixelRatio = defaultPixelRatio;
+        infoBoxText.value = null;
     }
 
     async function handleExport() {
@@ -257,7 +282,6 @@
             pixelRatio: 1 / scale.value,
             mimeType: imageMimeType.value,
         });
-        console.log(`${downloadFilename}.${mimeDb[imageMimeType.value].extensions[0]}`);
         const data = {
           files: [
             new File([blob], `${downloadFilename}.${mimeDb[imageMimeType.value]}`, {
@@ -291,6 +315,12 @@
 <template>
     <div class="bg-white w-full max-w-5xl mx-auto p-8 rounded shadow-md">
         <h1 class="text-3xl font-bold text-center mb-8">Quick edit</h1>
+
+        <div class="flex items-center bg-blue-500 text-white text-sm font-bold px-4 py-3 my-3" role="alert" v-if="infoBoxText">
+            <!-- TODO: Larger icon with long text on mobile -->
+            <svg class="fill-current w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M12.432 0c1.34 0 2.01.912 2.01 1.957 0 1.305-1.164 2.512-2.679 2.512-1.269 0-2.009-.75-1.974-1.99C9.789 1.436 10.67 0 12.432 0zM8.309 20c-1.058 0-1.833-.652-1.093-3.524l1.214-5.092c.211-.814.246-1.141 0-1.141-.317 0-1.689.562-2.502 1.117l-.528-.88c2.572-2.186 5.531-3.467 6.801-3.467 1.057 0 1.233 1.273.705 3.23l-1.391 5.352c-.246.945-.141 1.271.106 1.271.317 0 1.357-.392 2.379-1.207l.6.814C12.098 19.02 9.365 20 8.309 20z"/></svg>
+            <p>{{ infoBoxText }}</p>
+        </div>
 
         <Loader v-if="isLoading" :text="loadingText" />
         <div class="grid grid-cols-2 gap-8" v-else>
