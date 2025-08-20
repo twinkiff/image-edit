@@ -218,11 +218,11 @@
                         throw new Error('Image is too large to be loaded in browser');
                     }
                  }
-                 if (Konva.pixelRatio != defaultPixelRatio) {
+                 /*if (Konva.pixelRatio != defaultPixelRatio) {
                    infoBoxText.value = 'Image preview might appear blurry to preserve performances. Downloaded image will have the same quality as the input image.';
                  } else {
                    infoBoxText.value = null;
-                 }
+                 }*/
 
                  fileName.value = file.name;
                  image.value = newImage;
@@ -250,6 +250,15 @@
 
       await nextTick();
       imageNode.value.getNode().cache();
+
+      // Disable anti-aliasing
+      if (Konva.pixelRatio != defaultPixelRatio) {
+          // See https://github.com/konvajs/konva/issues/306
+          const nativeCtx = imageNode.value.getNode().getLayer().getContext()._context;
+          nativeCtx.webkitImageSmoothingEnabled = false;
+          nativeCtx.mozImageSmoothingEnabled = false;
+          nativeCtx.imageSmoothingEnabled = false;
+      }
     });
 
     function reset() {
@@ -328,7 +337,7 @@
                 <div ref="containerRef" class="w-full h-full">
                     <span class="text-gray-400 block text-center" v-if="!image">No image uploaded</span>
                     <v-stage v-if="image" ref="stageRef" :config="{width: stageWidth, height: stageHeight, scaleX: scale, scaleY: scale}">
-                        <v-layer>
+                        <v-layer ref="layerRef">
                             <!-- Full image (no filter) -->
                             <v-image
                                 v-if="image"
