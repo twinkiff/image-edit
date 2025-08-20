@@ -120,6 +120,7 @@
             return;
         }
         isDisabledFacesDetection.value = true;
+        await nextTick();
 
         const faces = await faceapi.detectAllFaces(image.value)
 
@@ -385,7 +386,7 @@
                     <div>
                         <h2>Blur:</h2>
                         <!-- TODO: Loading spinner + disabled status -->
-                        <Button :action="detectFaces" :active="facesFilters.pixelate.active" label="Blur faces"/>
+                        <Button :action="detectFaces" :active="facesFilters.pixelate.active" :disabled="isDisabledFacesDetection" label="Blur faces"/>
 
                         <h2>Effects:</h2>
                         <!-- TODO: Image mode: B&W / colors -->
